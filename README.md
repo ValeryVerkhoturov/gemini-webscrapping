@@ -1,5 +1,7 @@
 # Gemini webscrapper
 
+It`s required to extract info from BBB, YouTube and unstructured US news sites.
+
 [Example](/benchmark.md)
 
 ## Setup
