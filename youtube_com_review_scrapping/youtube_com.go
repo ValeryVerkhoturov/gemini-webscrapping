@@ -1,10 +1,10 @@
-package youtube_com
+package youtube_com_review_scrapping
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gemini-webscrapping/models"
+	"gemini-webscrapping/gemini_review_scrapping"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -37,7 +37,7 @@ type YoutubeCommentsResponse struct {
 	} `json:"items"`
 }
 
-func getComments(videoID string, maxResults int) (models.Reviews, error) {
+func getComments(videoID string, maxResults int) ([]string, error) {
 	// https://developers.google.com/youtube/v3/docs/commentThreads/list
 	params := url.Values{}
 	params.Add("key", os.Getenv("YOUTUBE_API_KEY"))
@@ -74,36 +74,39 @@ func getComments(videoID string, maxResults int) (models.Reviews, error) {
 		return nil, err
 	}
 
-	reviews := models.Reviews{}
-	for _, responseItem := range jsonResponse.Items {
-		date := strings.Split(responseItem.Snippet.TopLevelComment.Snippet.PublishedAt, "T")[0]
-		reviews = append(reviews, &models.Review{
-			Name:    responseItem.Snippet.TopLevelComment.Snippet.AuthorDisplayName,
-			Message: responseItem.Snippet.TopLevelComment.Snippet.TextDisplay,
-			Date:    date,
-		})
+	reviews := make([]string, len(jsonResponse.Items))
+	for i, responseItem := range jsonResponse.Items {
+		reviews[i] = responseItem.Snippet.TopLevelComment.Snippet.TextDisplay
 	}
 
 	return reviews, nil
 }
 
-func ScrapYoutube(videoUrl string) (models.Reviews, error) {
+func ScrapYoutubeReview(videoUrl string) (string, error) {
 	const maxResults = 50
 
+	var err error
+	comments := []string{}
 	if strings.HasPrefix(videoUrl, "https://youtu.be/") {
 		videoId := strings.Split(strings.Split(videoUrl, "/")[3], "?")[0]
-		return getComments(videoId, maxResults)
+		comments, err = getComments(videoId, maxResults)
 	} else if strings.HasPrefix(videoUrl, "https://www.youtube.com/watch") {
 		u, err := url.Parse(videoUrl)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		videoID := u.Query().Get("v")
-
-		return getComments(videoID, maxResults)
+		videoId := u.Query().Get("v")
+		comments, err = getComments(videoId, maxResults)
 	} else if strings.HasPrefix(videoUrl, "https://www.youtube.com/shorts/") {
 		videoId := strings.Split(strings.Split(videoUrl, "/")[4], "?")[0]
-		return getComments(videoId, maxResults)
+
+		comments, err = getComments(videoId, maxResults)
+	} else {
+		return "", errors.New("Invalid Youtube URL")
 	}
-	return nil, errors.New("Invalid Youtube URL")
+
+	if err != nil {
+		return "", err
+	}
+	return gemini_review_scrapping.ScrapGeminiFromMessages(comments)
 }

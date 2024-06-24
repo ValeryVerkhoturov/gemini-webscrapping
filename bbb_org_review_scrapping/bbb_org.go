@@ -1,10 +1,10 @@
-package bbb_org
+package bbb_org_review_scrapping
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gemini-webscrapping/models"
+	"gemini-webscrapping/gemini_review_scrapping"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -38,7 +38,7 @@ type response struct {
 	Sort       string      `json:"sort"`
 }
 
-func getReviews(businessId string, bbbId string, page int, pageSize int) (models.Reviews, int, error) {
+func getComments(businessId string, bbbId string, page int, pageSize int) ([]string, int, error) {
 	params := url.Values{}
 	params.Add("page", strconv.Itoa(page))
 	params.Add("pageSize", strconv.Itoa(pageSize))
@@ -63,52 +63,47 @@ func getReviews(businessId string, bbbId string, page int, pageSize int) (models
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return nil, 0, errors.New("Status code of getting BBB reviews " + strconv.Itoa(res.StatusCode))
+		return []string{}, 0, errors.New("Status code of getting BBB reviews " + strconv.Itoa(res.StatusCode))
 	}
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return nil, 0, err
+		return []string{}, 0, err
 	}
 
 	var jsonResponse response
 	err = json.Unmarshal(body, &jsonResponse)
 	if err != nil {
-		return nil, 0, err
+		return []string{}, 0, err
 	}
 
-	reviews := models.Reviews{}
-	for _, responseItem := range jsonResponse.Items {
-		date := fmt.Sprintf("%s-%s-%s", responseItem.Date.Year, responseItem.Date.Month, responseItem.Date.Day)
-		reviews = append(reviews, &models.Review{
-			Name:    responseItem.DisplayName,
-			Message: responseItem.Text,
-			Mark:    &responseItem.ReviewStarRating,
-			Date:    date,
-		})
+	reviews := make([]string, len(jsonResponse.Items))
+	for i, responseItem := range jsonResponse.Items {
+		reviews[i] = responseItem.Text
 	}
 
 	return reviews, jsonResponse.TotalPages, nil
 }
 
-func ScrapBBB(url string) (models.Reviews, error) {
+func ScrapBBBReview(url string) (string, error) {
 	splitUrl := strings.Split(url, "/")
 	splitUrl = strings.Split(splitUrl[8], "-")
 	businessId := splitUrl[len(splitUrl)-1]
 	bbbId := splitUrl[len(splitUrl)-2]
 
-	reviews, totalPages, err := getReviews(businessId, bbbId, 1, 10)
+	comments, totalPages, err := getComments(businessId, bbbId, 1, 10)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if totalPages > 1 {
 		for page := 2; page <= totalPages; page++ {
-			newReviews, _, err := getReviews(businessId, bbbId, page, 10)
+			newReviews, _, err := getComments(businessId, bbbId, page, 10)
 			if err != nil {
-				return nil, err
+				return "", err
 			}
-			reviews = append(reviews, newReviews...)
+
+			comments = append(comments, newReviews...)
 		}
 	}
-	return reviews, nil
+	return gemini_review_scrapping.ScrapGeminiFromMessages(comments)
 }

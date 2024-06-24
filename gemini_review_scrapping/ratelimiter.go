@@ -1,8 +1,7 @@
-package gemini
+package gemini_review_scrapping
 
 import (
 	"context"
-	"gemini-webscrapping/models"
 	"github.com/google/generative-ai-go/genai"
 	"golang.org/x/time/rate"
 	"time"
@@ -18,14 +17,9 @@ func newRateLimitedExtractor(interval time.Duration, burstLimit int) *RateLimite
 	}
 }
 
-func (rle *RateLimitedExtractor) extractReviewsWithRateLimit(client *genai.Client, strHTML string, prompt string) (models.Reviews, error) {
+func (rle *RateLimitedExtractor) extractReviewWithRateLimit(client *genai.Client, strHTML string, prompt string) (string, error) {
 	if err := rle.limiter.Wait(context.Background()); err != nil {
-		return models.Reviews{}, err
+		return "", err
 	}
-
-	reviews, err := extractReviews(client, strHTML, prompt)
-	if err != nil {
-		return models.Reviews{}, err
-	}
-	return reviews, nil
+	return extractReview(client, strHTML, prompt)
 }

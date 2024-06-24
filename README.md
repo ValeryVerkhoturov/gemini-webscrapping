@@ -1,6 +1,6 @@
 # Gemini webscrapper
 
-It`s required to extract info from BBB, YouTube and unstructured US news sites.
+It`s required to extract reviews from BBB, YouTube and unstructured US news sites.
 
 [Example](/benchmark.md)
 
@@ -19,29 +19,49 @@ go run .
 
 ## Architecture
 
-![](/img/components.svg)
+[//]: # (![]&#40;/img/components.svg&#41;)
 
-```puml
-@startuml
-package "System" {
+[//]: # (```puml)
 
-  component "URL Input" as urlInput
-  component "URL Classifier" as urlClass
-  component "YouTube API Client" as ytClient
-  component "BBB API Client" as bbbClient
-  component "Rate Limiter for Gemini" as geminiLimiter
-  component "Gemini API Client" as geminiClient
-  component "Output Formatter" as output
+[//]: # (@startuml)
 
-  urlInput -right-> urlClass
-  urlClass ..> ytClient : <<youtube url>>
-  urlClass ..> bbbClient : <<bbb.org url>> 
-  urlClass ..> geminiLimiter : <<other url>>
-  geminiLimiter -right-> geminiClient
-  ytClient -right-> output
-  bbbClient -right-> output
-  geminiClient -right-> output
-  
-}
-@enduml
-```
+[//]: # (package "System" {)
+
+[//]: # ()
+[//]: # (  component "URL Input" as urlInput)
+
+[//]: # (  component "URL Classifier" as urlClass)
+
+[//]: # (  component "YouTube API Client" as ytClient)
+
+[//]: # (  component "BBB API Client" as bbbClient)
+
+[//]: # (  component "Rate Limiter for Gemini" as geminiLimiter)
+
+[//]: # (  component "Gemini API Client" as geminiClient)
+
+[//]: # (  component "Output Formatter" as output)
+
+[//]: # ()
+[//]: # (  urlInput -right-> urlClass)
+
+[//]: # (  urlClass ..> ytClient : <<youtube url>>)
+
+[//]: # (  urlClass ..> bbbClient : <<bbb.org url>> )
+
+[//]: # (  urlClass ..> geminiLimiter : <<other url>>)
+
+[//]: # (  geminiLimiter -right-> geminiClient)
+
+[//]: # (  ytClient -right-> output)
+
+[//]: # (  bbbClient -right-> output)
+
+[//]: # (  geminiClient -right-> output)
+
+[//]: # (  )
+[//]: # (})
+
+[//]: # (@enduml)
+
+[//]: # (```)

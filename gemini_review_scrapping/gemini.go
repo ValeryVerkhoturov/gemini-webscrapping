@@ -1,4 +1,4 @@
-package gemini
+package gemini_review_scrapping
 
 import (
 	"bytes"
@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"gemini-webscrapping/models"
 	"github.com/google/generative-ai-go/genai"
 	"golang.org/x/net/html"
 	"golang.org/x/text/encoding"
@@ -17,25 +16,29 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 )
 
 const (
-	FindReviewPrompt = `
-You will get html document with multiple reviews of business.
-You need to extract reviewer name, his message and his mark and date of review.
-If message is too big, it should be summarized.
-Output should be only json array with reviews with properties "name" as string, "message" as string, "mark" as float, "date" as string with format "YYYY-MM-DD".
-If you did not find any reviews, return empty array. Do not write anything else.
+	FindReviewFromCommentsPrompt = `
+You will get multiple reviews of business.
+You need to summarize all opinions and write review of business.
+If you did not write complex review, write nothing. 
+Write plain text without markdown.
 `
-	FindNewsPrompt = `
+	FindReviewFromNewsPrompt = `
 You will get html document with news about business.
-You need to extract author name, text of news and date of review.
-If text is too big, it should be summarized. 
-Output should be only json array with single news object with properties "name" as string, "message" as string, "date" as string with format "YYYY-MM-DD".
-If you did not find news, return empty array. Do not write anything else.`
+You need to summarize news and write review of business.
+If you did not write complex review, write nothing.
+Write plain text without markdown.
+`
+	SummarizeReviewFromSomeReviewsPrompt = `
+You will get some reviews about business.
+You need to summarize them and write single review of business.
+If you did not write complex review, write nothing.
+Write plain text without markdown.
+`
 )
 
 var (
@@ -43,7 +46,7 @@ var (
 )
 
 func init() {
-	rateLimitedExtractor = *newRateLimitedExtractor(65*time.Second, 2)
+	rateLimitedExtractor = *newRateLimitedExtractor(10*time.Second, 2)
 }
 
 func getHTML(url string) ([]byte, error) {
@@ -110,7 +113,7 @@ func getEncoder(charset string) encoding.Encoding {
 	return encoder
 }
 
-func body(doc *html.Node) (*html.Node, error) {
+func getHTMLBody(doc *html.Node) (*html.Node, error) {
 	var body *html.Node
 	var crawler func(*html.Node)
 	crawler = func(node *html.Node) {
@@ -155,62 +158,66 @@ func renderNode(node *html.Node) (string, error) {
 	return b.String(), nil
 }
 
-func extractReviews(client *genai.Client, strHTML string, prompt string) (models.Reviews, error) {
-	ctx, _ := context.WithTimeout(context.Background(), 50*time.Second)
-	model := client.GenerativeModel("models/gemini-1.5-pro-latest")
+func extractReview(client *genai.Client, strHTML string, prompt string) (string, error) {
+	ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
+	model := client.GenerativeModel("models/gemini-1.5-flash") // models/gemini-1.5-pro-latest
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt), genai.Text(strHTML))
 	if err != nil {
-		return models.Reviews{}, err
+		return "", err
 	}
-	respString := strings.Replace(fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0]), "\n", "", -1)
-	re := regexp.MustCompile(`\[.*?\]`)
-	result := re.FindStringSubmatch(respString)
 
-	var reviews = models.Reviews{}
-	if len(result) > 0 {
-		err := reviews.UnmarshalLLMText(result[0])
-		if err != nil {
-			return models.Reviews{}, err
-		}
-		return reviews, nil
-	}
-	return models.Reviews{}, errors.New("Wrong LLM output")
+	return fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0]), nil
 }
 
-func ScrapGemini(url string) (models.Reviews, error) {
+func ScrapNewsSiteReview(url string) (string, error) {
 	fullPage, err := getHTML(url)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	doc, err := html.Parse(bytes.NewReader(fullPage))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	bodyNode, err := body(doc)
+	bodyNode, err := getHTMLBody(doc)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	removeTagsAndAttributes(bodyNode)
 	body, err := renderNode(bodyNode)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
+	return scrapGeminiInternal(body, FindReviewFromNewsPrompt)
+}
+
+func ScrapGeminiFromMessages(messages []string) (string, error) {
+	return scrapGeminiInternal(strings.Join(messages, "\n*****\n"), FindReviewFromCommentsPrompt)
+}
+
+func SummarizeReviews(reviews ...string) (string, error) {
+	if len(reviews) == 0 {
+		return "", errors.New("No input reviews to summarize")
+	}
+	return scrapGeminiInternal(strings.Join(reviews, "\n*****\n"), SummarizeReviewFromSomeReviewsPrompt)
+}
+
+func scrapGeminiInternal(strHTML string, prompt string) (string, error) {
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, option.WithAPIKey(os.Getenv("GEMINI_API_KEY")))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer client.Close()
 
-	var reviews = models.Reviews{}
-	for _, prompt := range []string{FindReviewPrompt, FindNewsPrompt} {
-		extractedReviews, err := rateLimitedExtractor.extractReviewsWithRateLimit(client, body, prompt)
-		if err != nil {
-			return nil, err
-		}
-		reviews = append(reviews, extractedReviews...)
+	review, err := rateLimitedExtractor.extractReviewWithRateLimit(client, strHTML, prompt)
+	if err != nil {
+		return "", err
 	}
-	return reviews, nil
+	if review == "" {
+		return "", errors.New("No Gemini output")
+	}
+
+	return review, nil
 }
